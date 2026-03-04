@@ -163,7 +163,7 @@ cd ..
 
 ### Model v1
 
-Required 4 24G NVIDIA GPUs. We used NVIDIA RTX 3090
+Required 4 24G NVIDIA GPUs. We used NVIDIA RTX 3090 GPUs
 
 ```bash
 cd ./v1
@@ -176,7 +176,7 @@ python finetune_sam_h5_fast.py
 ```
 
 ### Model v2
-Required 4 80G NVIDIA GPUs. We used NVIDIA A100/A800
+Required 4 80G NVIDIA GPUs. We used NVIDIA A100s/A800 GPUs
 
 ```bash
 cd ./v2
@@ -191,4 +191,4 @@ torchrun train.py --nproc_per_node=4
 ```
 
 ## Acknowledgment
-This code is based on [VolFormer](https://github.com/yudadabing/VolFormer). We sincerely thanks for their contribution.
+This code is based on [VolFormer](https://github.com/yudadabing/VolFormer). We gratefully acknowledge the authors for their outstanding contribution to the community.
