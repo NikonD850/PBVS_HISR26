@@ -10,7 +10,7 @@ $^3$ SenseTime Research and Tetras.AI, Beijing/Hangzhou, China
 
 ## Introduction
 
-Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 (16.64M) and v2 (75.77M), and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results. The v1 model achieved PSNR of 24.5750 dB and SAM of 0.048591 rad, whereas the v2 model delivered 25.0368 dB and 0.052980 rad. The fused result achieves better performance on both metrics, with a PSNR of **25.3089** dB and an SAM of **0.048415** rad.
+This is the winner solution's official implementation of [PBVS'26 HISR Challenge](https://www.codabench.org/competitions/12418). Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 (16.64M) and v2 (75.77M), and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results. The v1 model achieved PSNR of 24.5750 dB and SAM of 0.048591 rad, whereas the v2 model delivered 25.0368 dB and 0.052980 rad. The fused result achieves better performance on both metrics, with a PSNR of **25.3089** dB and an SAM of **0.048415** rad.
 
 ## Installation for Testing or Model v1 Training
 
@@ -30,6 +30,8 @@ python -m pip install -r requirements.txt
 ```
 
 ## Final results generation
+
+Since the link on Codabench page has expired. To your convenience, we add the LR inputs HDF5 files to `datasets/final_test`.
 
 ### Inference
 
@@ -77,6 +79,8 @@ The v1 model performs moderately in terms of PSNR but achieves better SAM metric
 ZIP file will be automatically generated under the `./result` directory for submission.
 
 ## Training Data Preparation
+
+We used No.7, No.25 and No.50 for validation while others for training. The dataset can be found at [dataset](https://zenodo.org/records/18171738)
 
 ### Model v1
 
