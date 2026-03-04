@@ -132,7 +132,9 @@ v2/
 │       ├── train/
 │       │   ├── shard_*.h5
 │       │   └── manifest.json
-│       └── val/
+│       └── test/
+│           ├── shard_*.h5
+│           └── manifest.json
 ......
 ```
 
@@ -149,7 +151,8 @@ cd ..
 
 ```bash
 cd ./v2
-python build_patch_shards.py
+python build_patch_shards.py --in_dir datasets/train --out_dir datasets/patch_shards/train
+python build_patch_shards.py --in_dir datasets/tesr --out_dir datasets/patch_shards/test
 cd ..
 ```
 
