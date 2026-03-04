@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--interp_batch", type=int, default=128, help="插值批大小。")
     parser.add_argument("--num_workers", type=int, default=0, help="CPU worker 数，0 表示自动使用 os.cpu_count()。")
     parser.add_argument("--threads_per_worker", type=int, default=1, help="每个 worker 内 torch 线程数。")
-    parser.add_argument("--gpus", type=str, default="", help="可选，逗号分隔 GPU id，如 0,1,2,3,4,5,6,7。")
+    parser.add_argument("--gpus", type=str, default="0", help="可选，逗号分隔 GPU id，如 0,1,2,3,4,5,6,7。")
     parser.add_argument("--save_dtype", type=str, choices=["uint8", "float32"], default="uint8", help="保存 dtype。")
     parser.add_argument("--compression", type=str, choices=["none", "lzf", "gzip"], default="none", help="HDF5 压缩方式。")
     parser.add_argument("--gzip_level", type=int, default=1, help="gzip 压缩级别。")

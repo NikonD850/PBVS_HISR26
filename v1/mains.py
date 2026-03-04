@@ -14,6 +14,10 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+
 class _AvgMeter:
     def __init__(self):
         self.reset()
@@ -45,6 +49,8 @@ from tiff_utils import build_pairs, evaluate_tiff_pairs
 
 def _set_cuda_visible_devices_from_args(argv):
     if argv is None:
+        return
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1:
         return
     if "--gpus" not in argv:
         return
@@ -87,12 +93,12 @@ def main():
     train_parser = subparsers.add_parser("train", help="parser for training arguments")
     train_parser.add_argument("--cuda", type=int, required=False, default=1,
                               help="set it to 1 for running on GPU, 0 for CPU")
-    train_parser.add_argument("--batch_size", type=int, default=1, help="batch size, default set to 64")
+    train_parser.add_argument("--batch_size", type=int, default=4, help="batch size, default set to 4")
     train_parser.add_argument("--UseLabeledSpectralMixUp", type=int, default=0, help="if we use gan loss, 0  for false, 1 for yes")
     train_parser.add_argument("--theta_LabeledSpectralMixUp", type=int, default=1, help="if we use gan loss, 0  for false, 1 for yes")
     train_parser.add_argument("--UseUnlabelConsistency", type=int, default=0, help="if we use unlabeled consistency, 0  for false, 1 for yes")
     train_parser.add_argument("--UseRGB", type=int, default=0, help="if we use rgb, 0  for false, 1 for yes")
-    train_parser.add_argument("--epochs", type=int, default=20, help="epochs, default set to 20")
+    train_parser.add_argument("--epochs", type=int, default=100, help="epochs, default set to 20")
     train_parser.add_argument("--conversionMat_path", type=str, default="./data/conversion_8channels.mat",
                               help="path to conversion matrix transforming spectral images of 31 channels to images of 8 channels ")
     train_parser.add_argument("--n_feats", type=int, default=192, help="n_feats, default set to 256")
@@ -117,13 +123,13 @@ def main():
     train_parser.add_argument("--weight_decay", type=float, default=0, help="weight decay, default set to 0")
     train_parser.add_argument("--save_dir", type=str, default="./trained_model/",
                               help="directory for saving trained models, default is trained_model folder")
-    train_parser.add_argument("--gpus", type=str, default="7", help="gpu ids (default: 7)")
+    train_parser.add_argument("--gpus", type=str, default="4,5,6,7", help="gpu ids (default: 4,5,6,7)")
 
     # TIFF dataset options (for HISR/lzy TIFF pairs)
     train_parser.add_argument("--use_tiff", type=int, default=1, help="1: use *_LR.tif/*_HR.tif pair dataset; 0: use original .mat dataset")
-    train_parser.add_argument("--train_dir_tiff", type=str, default="/home/fdw/code/HISR/lzy/tiff/train", help="TIFF train dir containing *_LR.tif and *_HR.tif")
-    train_parser.add_argument("--eval_dir_tiff", type=str, default="/home/fdw/code/HISR/lzy/tiff/test", help="TIFF eval dir containing *_LR.tif and *_HR.tif")
-    train_parser.add_argument("--test_dir_tiff", type=str, default="/home/fdw/code/HISR/lzy/tiff/test", help="TIFF test dir containing *_LR.tif and *_HR.tif")
+    train_parser.add_argument("--train_dir_tiff", type=str, default="./datasets/tiff/train", help="TIFF train dir containing *_LR.tif and *_HR.tif")
+    train_parser.add_argument("--eval_dir_tiff", type=str, default="./datasets/tiff/test", help="TIFF eval dir containing *_LR.tif and *_HR.tif")
+    train_parser.add_argument("--test_dir_tiff", type=str, default="./datasets/tiff/test", help="TIFF test dir containing *_LR.tif and *_HR.tif")
     train_parser.add_argument("--lr_patch", type=int, default=50, help="LR patch size for TIFF training")
     train_parser.add_argument("--samples_per_image", type=int, default=200, help="samples per LR/HR image pair for TIFF training")
     train_parser.add_argument("--tile", type=int, default=50, help="TIFF eval/test sliding window tile (LR space)")
@@ -143,7 +149,7 @@ def main():
     train_parser.add_argument("--vf_stages", type=int, default=4, help="VolFormer number of stages")
     train_parser.add_argument("--vf_num_heads", type=int, default=4, help="VolFormer number of heads in each stage")
     train_parser.add_argument("--amp", type=int, default=1, help="Use AMP (1) or not (0)")
-    train_parser.add_argument("--resume", type=str, default='/home/fdw/code/HISR/lzy/code/HISR/VolFormer/checkpoints_old/Cave_Cave_Cave_VolFormer_Blocks=3_Subs8_Ovls2_Feats=192_ckpt_epoch_4.pth', help="checkpoint path to resume (optional)")
+    train_parser.add_argument("--resume", type=str, default=None, help="checkpoint path to resume (optional)")
 
     test_parser = subparsers.add_parser("test", help="parser for testing arguments")
     test_parser.add_argument("--cuda", type=int, required=False, default=1,
@@ -162,7 +168,8 @@ def main():
     test_parser.add_argument("--result_path", type=str, default="./results/",
                              help="result_path, directory of result")
     args = main_parser.parse_args()
-    if hasattr(args, "gpus"):
+    use_ddp_launch = int(os.environ.get("WORLD_SIZE", "1")) > 1
+    if hasattr(args, "gpus") and not use_ddp_launch:
         print(args.gpus)
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
     if args.subcommand is None:
@@ -194,12 +201,38 @@ def loss_calc(pred, label, device):
 
 
 def train(args):
-    device = torch.device("cuda" if args.cuda else "cpu")
-    print("Start seed: ", args.seed)
+    # -------- DDP setup --------
+    use_ddp = bool(int(os.environ.get("WORLD_SIZE", "1"))) and int(os.environ.get("WORLD_SIZE", "1")) > 1
+    if use_ddp:
+        import datetime
+        dist.init_process_group(backend="nccl", timeout=datetime.timedelta(minutes=60))
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        rank = int(os.environ.get("RANK", "0"))
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        torch.cuda.set_device(local_rank)
+        device = torch.device("cuda", local_rank)
+        is_rank0 = (rank == 0)
+    else:
+        local_rank = 0
+        rank = 0
+        world_size = 1
+        device = torch.device("cuda" if args.cuda else "cpu")
+        is_rank0 = True
+
+    if is_rank0:
+        print("Start seed: ", args.seed)
     torch.manual_seed(args.seed)
-    if args.cuda:
+    if args.cuda and device.type == "cuda":
         torch.cuda.manual_seed(args.seed)
     cudnn.benchmark = True
+
+    # batch_size semantics (B): args.batch_size is GLOBAL batch
+    if use_ddp:
+        if args.batch_size % world_size != 0:
+            raise ValueError(f"--batch_size is global batch ({args.batch_size}) but world_size={world_size}; must be divisible.")
+        per_rank_batch = args.batch_size // world_size
+    else:
+        per_rank_batch = args.batch_size
 
     # load conversion_matrix and by multiplying the conversion matrix with images, we can get images with 8 channels
     conversion_matix = scipy.io.loadmat(args.conversionMat_path)  # ("~/Data/Chikusei/conversion_matrix_128_8.mat") #
@@ -207,7 +240,8 @@ def train(args):
     conversion_matix = torch.from_numpy(conversion_matix.copy())
     conversion_matix = conversion_matix.to(device)
 
-    print('===> Loading datasets')
+    if is_rank0:
+        print('===> Loading datasets')
 
     if int(getattr(args, "use_tiff", 0)) == 1:
         train_mslabel_set = loadingTiffData(
@@ -219,7 +253,7 @@ def train(args):
         )
         train_rgb_set = None
         eval_pairs = build_pairs(args.eval_dir_tiff)
-        eval_ms_loader = None # Not used in TIFF mode for validation
+        eval_ms_loader = None
         colors = int(args.n_colors)
         args.n_scale = int(args.scale)
     else:
@@ -237,9 +271,12 @@ def train(args):
         else:
             colors = 121
 
+    train_sampler = DistributedSampler(train_mslabel_set, shuffle=True) if use_ddp else None
 
-    print('===> Building model')
-    if args.model_title == "VolFormer":
+    if is_rank0:
+        print('===> Building model')
+    net = None
+    if args.model_title.startswith("VolFormer"):
         net = General_VolFormer(
             n_subs=args.n_subs,
             n_ovls=args.n_ovls,
@@ -255,61 +292,70 @@ def train(args):
             vf_stages=int(getattr(args, "vf_stages", 4)),
             vf_num_heads=int(getattr(args, "vf_num_heads", 2)),
         )
+    
+    if net is None:
+        raise ValueError(f"Model architecture for '{args.model_title}' is not defined.")
 
-    model_title = args.dataset_name + "_"+args.dataset_name + "_" + args.model_title + '_Blocks=' + str(args.n_blocks) + '_Subs' + str(
+    model_title = args.dataset_name + "_" + args.model_title + '_Blocks=' + str(args.n_blocks) + '_Subs' + str(
         args.n_subs) + '_Ovls' + str(args.n_ovls) + '_Feats=' + str(args.n_feats)
     model_name = './checkpoints5/' + model_title + "_ckpt_epoch_" + str(16) + ".pth"
     args.model_title = model_title
 
-    if torch.cuda.device_count() > 1:
-        print("===> Let's use", torch.cuda.device_count(), "GPUs.")
-        net = torch.nn.DataParallel(net)
+    net.to(device)
+    if use_ddp:
+        net = DDP(net, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True, broadcast_buffers=False)
+    elif torch.cuda.device_count() > 1:
+        if is_rank0:
+            print("===> Let's use", torch.cuda.device_count(), "GPUs.")
+        net = torch.nn.DataParallel(net, device_ids=list(range(torch.cuda.device_count())))
+    net.train()
     start_epoch = 0
     if resume:
         if os.path.isfile(model_name):
             print("=> loading checkpoint '{}'".format(model_name))
             checkpoint = torch.load(model_name)
             start_epoch = checkpoint["epoch"]
-            net.load_state_dict(checkpoint["model"].state_dict())
+            net.load_state_dict(checkpoint["model"].state_dict(), strict=False)
 
 
         else:
             print("=> no checkpoint found at '{}'".format(model_name))
-    net.to(device).train()
 
-    # Loss
     h_loss = HybridLoss(spatial_tv=True, spectral_tv=True)
     L1_loss = torch.nn.L1Loss()
 
     best_psnr = -1e9
+    optimizer_state = None
     if args.resume is not None and os.path.exists(args.resume):
-        print("=> loading resume checkpoint '{}'".format(args.resume))
+        if is_rank0:
+            print("=> loading resume checkpoint '{}'".format(args.resume))
         try:
             ckpt = torch.load(args.resume, map_location="cpu", weights_only=False)
         except TypeError:
             ckpt = torch.load(args.resume, map_location="cpu")
-        if isinstance(ckpt, dict) and "model" in ckpt:
-            net.load_state_dict(ckpt["model"].state_dict() if hasattr(ckpt["model"], "state_dict") else ckpt["model"])
+        if isinstance(ckpt, dict):
+            if "model_state_dict" in ckpt:
+                net.load_state_dict(ckpt["model_state_dict"], strict=False)
+            elif "model" in ckpt:
+                net.load_state_dict(ckpt["model"].state_dict() if hasattr(ckpt["model"], "state_dict") else ckpt["model"], strict=False)
             if "optim" in ckpt and ckpt["optim"] is not None:
                 optimizer_state = ckpt["optim"]
-            else:
-                optimizer_state = None
             if "best_psnr" in ckpt and ckpt["best_psnr"] is not None:
                 best_psnr = float(ckpt["best_psnr"])
             if "epoch" in ckpt:
                 start_epoch = int(ckpt["epoch"])
-        else:
-            optimizer_state = None
-    else:
-        optimizer_state = None
 
-    print("===> Setting optimizer and logger")
-    # add L2 regularization
+    if is_rank0:
+        print("===> Setting optimizer and logger")
 
     optimizer = Adam(net.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     if optimizer_state is not None:
         optimizer.load_state_dict(optimizer_state)
-        print("=> optimizer state loaded")
+        if is_rank0:
+            print("=> optimizer state loaded")
+    
+    # 使用 CosineAnnealingLR，从 1e-4 到 1e-7
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-7)
 
     epoch_meter_mslabel = meter.AverageValueMeter()
     epoch_meter_mslabelmixup = meter.AverageValueMeter()
@@ -317,28 +363,36 @@ def train(args):
     epoch_meter_msunlabelmixup = meter.AverageValueMeter()
     epoch_meter_msunlabel = meter.AverageValueMeter()
     epoch_meter_rgb = meter.AverageValueMeter()
-    writer = SummaryWriter('runs/' + model_title + '_' + str(time.localtime()))
+    writer = SummaryWriter('runs/' + model_title + '_' + str(time.localtime())) if is_rank0 else None
 
-    print('===> Start training')
+    if is_rank0:
+        print('===> Start training')
 
     for e in range(start_epoch, args.epochs):
-        adjust_learning_rate(args.learning_rate, optimizer, e + 1, args.epochs)
+        if train_sampler is not None:
+            train_sampler.set_epoch(e)
 
         epoch_meter_mslabel.reset()
-        print("Start epoch {}, labeled ms learning rate = {}".format(e + 1, optimizer.param_groups[0]["lr"]))
+        if is_rank0:
+            print("Start epoch {}, learning rate = {}".format(e + 1, optimizer.param_groups[0]["lr"]))
         epoch_meter_mslabelmixup.reset()
         epoch_meter_msunlabel.reset()
         epoch_meter_mslabelrgb.reset()
         epoch_meter_msunlabelmixup.reset()
         epoch_meter_rgb.reset()
 
-        
         iteration = 0
-        train_mslabel_loader = DataLoader(train_mslabel_set, batch_size=args.batch_size, num_workers=args.num_workers if int(getattr(args, "use_tiff", 0)) == 1 else 8, shuffle=True)
+        train_mslabel_loader = DataLoader(
+            train_mslabel_set,
+            batch_size=per_rank_batch,
+            num_workers=args.num_workers if int(getattr(args, "use_tiff", 0)) == 1 else 8,
+            sampler=train_sampler,
+            shuffle=(train_sampler is None),
+        )
         train_mslabel_iter = iter(train_mslabel_loader)
 
         if int(getattr(args, "use_tiff", 0)) == 1:
-            pbar = tqdm(train_mslabel_loader, desc=f"Train E{e+1}", dynamic_ncols=True, mininterval=10.0, leave=True)
+            pbar = tqdm(train_mslabel_loader, desc=f"Train E{e+1}", dynamic_ncols=True, mininterval=10.0, leave=True, disable=not is_rank0)
 
             use_amp = bool(int(getattr(args, "amp", 1))) and device.type == "cuda"
             scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -365,9 +419,10 @@ def train(args):
 
                 loss_v = float(loss.item())
                 epoch_meter_mslabel.add(loss_v)
-                pbar.set_postfix({"loss": f"{loss_v:.6f}"})
+                if is_rank0:
+                    pbar.set_postfix({"loss": f"{loss_v:.6f}"})
 
-                if (iteration % log_interval) == 0:
+                if is_rank0 and (iteration % log_interval) == 0:
                     print(
                         "===> {} B{} Sub{} Fea{} GPU{}\tEpoch[{}]({}/{}): ms Loss: {:.6f}".format(
                             time.ctime(),
@@ -382,36 +437,54 @@ def train(args):
                         ),
                         flush=True,
                     )
-                    writer.add_scalar('scalar/train_loss_ms', loss_v, e * len(train_mslabel_loader) + iteration)
-                
-                # ---- MODIFICATION: Intermediate Validation ----
+                    if writer is not None:
+                        writer.add_scalar('scalar/train_loss_ms', loss_v, e * len(train_mslabel_loader) + iteration)
+
                 current_total_iter = e * len(train_mslabel_loader) + iteration
+                
                 if args.eval_iters > 0 and (current_total_iter % args.eval_iters == 0):
-                    print(f"\n[Validation] Triggered at total_iter {current_total_iter}...", flush=True)
-                    mean_psnr, mean_sam = evaluate_tiff_pairs(
-                        net,
-                        eval_pairs,
-                        device=device,
-                        scale=int(args.scale),
-                        tile=int(getattr(args, "tile", 50)),
-                        overlap=int(getattr(args, "overlap", 0)),
-                        save_dir=None,
-                        strict=bool(int(getattr(args, "eval_strict", 0))),
-                    )
-                    print(f"\n[ITER {current_total_iter}] TIFF eval PSNR={mean_psnr:.4f} dB | SAM={mean_sam:.6f} rad", flush=True)
-
-                    if np.isfinite(mean_psnr) and np.isfinite(mean_sam):
-                        writer.add_scalar('scalar/tiff_eval_psnr_iters', mean_psnr, current_total_iter)
-                        writer.add_scalar('scalar/tiff_eval_sam_iters', mean_sam, current_total_iter)
-
-                        if int(getattr(args, "save_best", 1)) == 1 and mean_psnr > best_psnr:
-                            best_psnr = mean_psnr
-                            save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=True)
-                    else:
-                        print(f"[TIFF EVAL][ITER {current_total_iter}] 指标为NaN/Inf，跳过写tensorboard/更新best", flush=True)
+                    if use_ddp:
+                        dist.barrier()
                     
-                    net.to(device).train()
-                # -----------------------------------------------
+                    eval_model = net.module if (use_ddp and hasattr(net, "module")) else net
+                    
+                    if is_rank0:
+                        print(f"\n[Validation] Triggered at total_iter {current_total_iter}...", flush=True)
+                    eval_model.eval()
+                    
+                    mean_psnr, mean_sam = 0.0, 0.0
+                    if is_rank0:
+                        with torch.no_grad():
+                            mean_psnr, mean_sam = evaluate_tiff_pairs(
+                                eval_model,
+                                eval_pairs,
+                                device=device,
+                                scale=int(args.scale),
+                                tile=int(getattr(args, "tile", 50)),
+                                overlap=int(getattr(args, "overlap", 0)),
+                                save_dir=None,
+                                strict=bool(int(getattr(args, "eval_strict", 0))),
+                            )
+                        print(f"\n[ITER {current_total_iter}] TIFF eval PSNR={mean_psnr:.4f} dB | SAM={mean_sam:.6f} rad", flush=True)
+
+                        if np.isfinite(mean_psnr) and np.isfinite(mean_sam):
+                            if writer is not None:
+                                writer.add_scalar('scalar/tiff_eval_psnr_iters', mean_psnr, current_total_iter)
+                                writer.add_scalar('scalar/tiff_eval_sam_iters', mean_sam, current_total_iter)
+
+                            save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=False, use_ddp=use_ddp, device=device, iter_num=current_total_iter)
+                            if int(getattr(args, "save_best", 1)) == 1 and mean_psnr > best_psnr:
+                                best_psnr = mean_psnr
+                                save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=True, use_ddp=use_ddp, device=device)
+                        else:
+                            print(f"[TIFF EVAL][ITER {current_total_iter}] 指标为NaN/Inf，跳过写tensorboard/更新best", flush=True)
+
+                    if use_ddp:
+                        dist.barrier()
+                    
+                    net.train()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
         else:
             train_rgb_loader = DataLoader(train_rgb_set, batch_size=args.theta_rgb * args.batch_size, num_workers=8, shuffle=True)
@@ -510,57 +583,67 @@ def train(args):
 
 
                 iteration += 1
-        
 
-        print("===> {}\tEpoch {} Training mslabel Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
-                                                                                    epoch_meter_mslabel.value()[0]))
-        print("===> {}\tEpoch {} Training msunlabel Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
-                                                                                        epoch_meter_msunlabel.value()[0]))
-        print("===> {}\tEpoch {} Training rgb Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
-                                                                                epoch_meter_rgb.value()[0]))
+        if is_rank0:
+            print("===> {}\tEpoch {} Training mslabel Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
+                                                                                        epoch_meter_mslabel.value()[0]))
+            print("===> {}\tEpoch {} Training msunlabel Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
+                                                                                            epoch_meter_msunlabel.value()[0]))
+            print("===> {}\tEpoch {} Training rgb Complete: Avg. Loss: {:.6f}".format(time.ctime(), e + 1,
+                                                                                    epoch_meter_rgb.value()[0]))
 
-        # run validation set every epoch
         if int(getattr(args, "use_tiff", 0)) == 1:
-            # Check if we should skip end-of-epoch eval if eval_iters is used to avoid redundancy, 
-            # or keep it as a safeguard. Here we keep it but check eval_interval.
-            if args.eval_iters == 0 and ((e + 1) % int(getattr(args, "eval_interval", 1)) == 0):
-                mean_psnr, mean_sam = evaluate_tiff_pairs(
-                    net,
-                    eval_pairs,
-                    device=device,
-                    scale=int(args.scale),
-                    tile=int(getattr(args, "tile", 50)),
-                    overlap=int(getattr(args, "overlap", 0)),
-                    save_dir=None,
-                )
+            if args.eval_iters == 0 and ((e + 1) % int(getattr(args, "eval_interval", 1)) == 0) and is_rank0:
+                net.eval()
+                with torch.no_grad():
+                    mean_psnr, mean_sam = evaluate_tiff_pairs(
+                        net,
+                        eval_pairs,
+                        device=device,
+                        scale=int(args.scale),
+                        tile=int(getattr(args, "tile", 50)),
+                        overlap=int(getattr(args, "overlap", 0)),
+                        save_dir=None,
+                    )
                 print(f"[EPOCH {e+1}] TIFF eval PSNR={mean_psnr:.4f} dB | SAM={mean_sam:.6f} rad", flush=True)
-                writer.add_scalar('scalar/tiff_eval_psnr', mean_psnr, e + 1)
-                writer.add_scalar('scalar/tiff_eval_sam', mean_sam, e + 1)
+                if writer is not None:
+                    writer.add_scalar('scalar/tiff_eval_psnr', mean_psnr, e + 1)
+                    writer.add_scalar('scalar/tiff_eval_sam', mean_sam, e + 1)
 
                 if int(getattr(args, "save_best", 1)) == 1 and mean_psnr > best_psnr:
                     best_psnr = mean_psnr
-                    save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=True)
+                    save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=True, use_ddp=use_ddp, device=device)
+                net.train()
         else:
-            eval_loss_ms = validate(args, eval_ms_loader, "spectral", net, L1_loss, args.theta_rgb)
-            writer.add_scalar('scalar/avg_validation_loss_ms', eval_loss_ms, iteration)
+            eval_loss_ms = validate(args, eval_ms_loader, "spectral", net, L1_loss, args.theta_rgb, device)
+            if writer is not None:
+                writer.add_scalar('scalar/avg_validation_loss_ms', eval_loss_ms, iteration)
 
+        if writer is not None:
+            writer.add_scalar('scalar/avg_epoch_loss_mslabel', epoch_meter_mslabel.value()[0], e + 1)
+            writer.add_scalar('scalar/avg_epoch_loss_msunlabel', epoch_meter_msunlabel.value()[0], e + 1)
+            writer.add_scalar('scalar/avg_epoch_loss_rgb', epoch_meter_rgb.value()[0], e + 1)
 
-        # tensorboard visualization
-        writer.add_scalar('scalar/avg_epoch_loss_mslabel', epoch_meter_mslabel.value()[0], e + 1)
-        writer.add_scalar('scalar/avg_epoch_loss_msunlabel', epoch_meter_msunlabel.value()[0], e + 1)
-        writer.add_scalar('scalar/avg_epoch_loss_rgb', epoch_meter_rgb.value()[0], e + 1)
-        # save model weights at checkpoints every epoch
-        # save checkpoint every epoch; best checkpoint will be updated after TIFF eval
-        save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=False)
+        if is_rank0:
+            save_checkpoint(args, net, optimizer, e + 1, best_psnr=best_psnr, is_best=False, use_ddp=use_ddp, device=device)
 
-    # save model after training
-    net.eval().cpu()
-    save_model_filename = model_title + "_epoch_" + str(args.epochs) + ".pth"
-    save_model_path = os.path.join(args.save_dir, save_model_filename)
-    # Use the model directly if it's not a DataParallel instance.
-    model_state = net.module.state_dict() if isinstance(net, torch.nn.DataParallel) else net.state_dict()
-    torch.save(model_state, save_model_path)
-    print("\nDone, trained model saved at", save_model_path)
+        scheduler.step()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        if use_ddp:
+            dist.barrier()
+
+    if is_rank0:
+        save_model_filename = model_title + "_epoch_" + str(args.epochs) + ".pth"
+        save_model_path = os.path.join(args.save_dir, save_model_filename)
+        model_state = net.module.state_dict() if hasattr(net, 'module') else net.state_dict()
+        torch.save(model_state, save_model_path)
+        print("\nDone, trained model saved at", save_model_path)
+
+    if use_ddp:
+        dist.destroy_process_group()
 
 
 def conversion(m_input, m_conversion):
@@ -605,9 +688,7 @@ def adjust_learning_rate_D(start_lr, optimizer, epoch):
         param_group['lr'] = lr
 
 
-def validate(args, loader, modality, model, criterion, theta):
-    device = torch.device("cuda" if args.cuda else "cpu")
-    # switch to evaluate mode
+def validate(args, loader, modality, model, criterion, theta, device):
     model.eval()
     epoch_meter = meter.AverageValueMeter()
     epoch_meter.reset()
@@ -655,8 +736,13 @@ def test(args):
                                       n_scale=args.n_scale, res_scale=0.1, use_share=True, conv=default_conv)
 
         ####test checkpoints
-        checkpoint = torch.load(args.model_dir)
-        model.load_state_dict(checkpoint["model"].state_dict())
+        checkpoint = torch.load(args.model_dir, map_location="cpu", weights_only=False)
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+        elif "model" in checkpoint:
+            model.load_state_dict(checkpoint["model"].state_dict() if hasattr(checkpoint["model"], "state_dict") else checkpoint["model"], strict=False)
+        else:
+            model.load_state_dict(checkpoint, strict=False)
 
         model.to(device).eval()
         mse_loss = torch.nn.MSELoss()
@@ -693,28 +779,35 @@ def test(args):
     json.dump(indices, open(QIstr, 'w'))
 
 
-def save_checkpoint(args, model, optimizer, epoch, best_psnr=None, is_best: bool = False):
-    device = torch.device("cuda" if args.cuda else "cpu")
-    model.eval().cpu()
-
+def save_checkpoint(args, model, optimizer, epoch, best_psnr=None, is_best: bool = False, use_ddp: bool = False, device=None, iter_num=None):
     checkpoint_model_dir = './checkpoints/'
     if not os.path.exists(checkpoint_model_dir):
         os.makedirs(checkpoint_model_dir)
 
-    # save epoch checkpoint
-    ckpt_model_filename = args.dataset_name + "_" + args.model_title + "_ckpt_epoch_" + str(epoch) + ".pth"
-    ckpt_model_path = os.path.join(checkpoint_model_dir, ckpt_model_filename)
+    model_state = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
 
     state = {
         "epoch": epoch,
-        "model": model,
+        "model_state_dict": model_state,
         "optim": optimizer.state_dict() if optimizer is not None else None,
         "best_psnr": best_psnr,
         "args": vars(args),
     }
+
+    if iter_num is not None:
+        iter_ckpt_filename = args.dataset_name + "_" + args.model_title + "_epoch_" + str(epoch) + "_iter_" + str(iter_num) + ".pth"
+        iter_ckpt_path = os.path.join(checkpoint_model_dir, iter_ckpt_filename)
+        torch.save(state, iter_ckpt_path)
+        print("Iter Checkpoint saved to {}".format(iter_ckpt_path))
+        
+        last_path = os.path.join(checkpoint_model_dir, "last.pth")
+        torch.save(state, last_path)
+        return
+
+    ckpt_model_filename = args.dataset_name + "_" + args.model_title + "_ckpt_epoch_" + str(epoch) + ".pth"
+    ckpt_model_path = os.path.join(checkpoint_model_dir, ckpt_model_filename)
     torch.save(state, ckpt_model_path)
 
-    # also maintain a last.pth
     last_path = os.path.join(checkpoint_model_dir, "last.pth")
     torch.save(state, last_path)
 
@@ -723,7 +816,6 @@ def save_checkpoint(args, model, optimizer, epoch, best_psnr=None, is_best: bool
         torch.save(state, best_path)
         print("[BEST] update best_psnr={}, saved to {}".format(best_psnr, best_path))
 
-    model.to(device).train()
     print("Checkpoint saved to {}".format(ckpt_model_path))
 
 

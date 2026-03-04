@@ -163,17 +163,8 @@ Required a 24G NVIDIA GPU
 ```bash
 cd ./v1
 
-# Visualization (optional)
-tensorboard --logdir ./runs/
-
 # Base model training
-python mains.py train
-
-# Fine-tuning
-python finetune_tensor.py
-
-# Column-wise structure + Edge-aware fine-tuning
-python finetune_column_edge.py
+torchrun --nproc_per_node=4 mains.py train
 
 # Fast fine-tuning with SAM optimization
 python finetune_sam_h5_fast.py

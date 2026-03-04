@@ -61,8 +61,8 @@ def parse_args():
     parser.add_argument("--vf_num_heads", type=int, default=4)
     
     # Data paths
-    parser.add_argument("--train_dir", type=str, default="/home/fdw/data/HISR/train")
-    parser.add_argument("--val_dir", type=str, default="/home/fdw/data/HISR/test")
+    parser.add_argument("--train_dir", type=str, default="./datasets/h5/train")
+    parser.add_argument("--val_dir", type=str, default="./datasets/h5/test")
     
     # Training config - 优化参数
     parser.add_argument("--epochs", type=int, default=10)
@@ -83,8 +83,7 @@ def parse_args():
     parser.add_argument("--freeze_trunk", type=int, default=0, help="1: 固定trunk")
     
     # Checkpoint
-    parser.add_argument("--resume", type=str, 
-                        default="/home/fdw/code/HISR/lzy/code/HISR/VolFormer/checkpoints/trae/psnr_24.49_sam_0.0520_VolFormer_Blocks=3_Subs8_Ovls2_Feats=192_epoch_42_iter_128100.pth")
+    parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default="./checkpoints_finetune_fast")
     
     # Evaluation
