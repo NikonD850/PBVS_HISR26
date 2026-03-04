@@ -1,6 +1,4 @@
-# Introduction
-
-The winner solution of PBVS'26 HISR Challenge.
+# The winner solution of PBVS'26 HISR Challenge.
 
 Dawei Fan $^{1,2,3}$, Zeyu Li $^1$, Zhenzhen Qin $^{1,2}$, Peihong Xin $^{1,2}$, Xiaofeng Chu $^3$, Fan Ji $^{1,2}$, Chen Yu $^{1,2}$, Yijun Lin $^1$, Hanxiang Yang $^1$, Xiongxin Tang $^{1,2}$, Fanjiang Xu $^{1,2}$
 
@@ -10,7 +8,9 @@ $^2$ University of Chinese Academy of Sciences, Beijing, China
 
 $^3$ SenseTime Research and Tetras.AI, Beijing/Hangzhou, China
 
-Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 and v2, and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results.
+## Introduction
+
+Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 (16.64M) and v2 (75.77M), and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results. The v1 model achieved PSNR of 24.5750 dB and SAM of 0.048591 rad, whereas the v2 model delivered 25.0368 dB and 0.052980 rad. The fused result achieves better performance on both metrics, with a PSNR of **25.3089** dB and an SAM of **0.048415** rad.
 
 ## Installation for Testing or Model v1 Training
 
@@ -33,7 +33,7 @@ python -m pip install -r requirements.txt
 
 ### Inference
 
-You can download our pre-trained models (v1 & v2) on [Google Drive](https://drive.google.com/drive/folders/10Zys2Wk3QavvLRmKm4gqgJC4FuUgyxW8).
+You can download our pre-trained models (v1 & v2) from [checkpoints](https://drive.google.com/drive/folders/10Zys2Wk3QavvLRmKm4gqgJC4FuUgyxW8). The results are available at [final results](https://drive.google.com/drive/folders/1aL0n0hZfNZPARktEyCEtVVoTHkwWLCBt)
 
 Put `v1.pth` into `./v1/checkpoints`, `v2.pth` into `./v2/checkpoints`, `final_test` dataset into `./datasets`.
 
