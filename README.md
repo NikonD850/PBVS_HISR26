@@ -80,19 +80,6 @@ ZIP file will be automatically generated under the `./result` directory for subm
 
 ### Model v1
 
-Model v1 uses `TIFF (.tif)` files for pre-training and `HDF5 (.h5)` files for fine-tuning.
-
-**TIFF**: `{name}_LR.tif` & `{name}_HR.tif` are paired, with LR × 4 = HR.
-
-**HDF5**: Contains `LR_uint8: (H, W, C)` & `HR_uint8: (H*4, W*4, C)`.
-
-Use `h5_to_tiff.py` to convert from `HDF5` to `TIFF`:
-
-```bash
-cd ./v1
-python h5_to_tiff.py
-```
-
 Place the datasets under `v1/datasets` as the following structure:
 
 ```plaintext
@@ -111,23 +98,35 @@ v1/
 ......
 ```
 
-### Model v2
+Model v1 uses `TIFF (.tif)` files for pre-training and `HDF5 (.h5)` files for fine-tuning.
 
-Build patch shards using `build_patch_shards.py`:
+**TIFF**: `{name}_LR.tif` & `{name}_HR.tif` are paired, with LR × 4 = HR.
+
+**HDF5**: Contains `LR_uint8: (H, W, C)` & `HR_uint8: (H*4, W*4, C)`.
+
+Use `h5_to_tiff.py` to convert from `HDF5` to `TIFF`:
 
 ```bash
-cd ./v2
-python build_patch_shards.py
+cd ./v1
+python h5_to_tiff.py
+cd ..
 ```
 
-Place the original h5 files and patch shards under `v2/datasets` as the following structure:
+### Model v2
+
+Place the original h5 files and patch shards under `v2/datasets_origin` as the following structure:
 
 ```plaintext
 v2/
-├── datasets/
-│   ├── train/             # Original h5 files for training
+├── datasets_origin/
+│   ├── train/             # Original h5 files
 │   │   └── *.h5
-│   ├── val/               # Original h5 files for validating
+│   └── test/              # Original h5 files
+│       └── *.h5
+├── datasets/              # Generated datasets
+│   ├── train/             # h5 files for training
+│   │   └── *.h5
+│   ├── test/              # h5 files for validating
 │   │   └── *.h5
 │   └── patch_shards/      # Output of build_patch_shards.py
 │       ├── train/
@@ -135,6 +134,23 @@ v2/
 │       │   └── manifest.json
 │       └── val/
 ......
+```
+
+1. build LR_4x data for pre-training
+
+```bash
+cd ./v2
+python add_bicubic_h5.py --in_dir datasets_origin/train --out_dir datasets/train
+python add_bicubic_h5.py --in_dir datasets_origin/test --out_dir datasets/test
+cd ..
+```
+
+2. Build patch shards using `build_patch_shards.py` for fine-tuning:
+
+```bash
+cd ./v2
+python build_patch_shards.py
+cd ..
 ```
 
 ## Training
