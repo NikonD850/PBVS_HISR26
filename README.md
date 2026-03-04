@@ -192,3 +192,7 @@ torchrun train.py --nproc_per_node=4
 
 ## Acknowledgment
 This code is based on [VolFormer](https://github.com/yudadabing/VolFormer). We gratefully acknowledge the authors for their outstanding contribution to the community.
+
+## Contact
+
+If you have any question, please email nikoncopd850@gmail.com to discuss with the author.
