@@ -29,10 +29,10 @@ class SystemOptions:
 class DataOptions:
     dataset_backend: str = "patch_shard"
 
-    train_dir_mslabel: str = "/mnt/afs/users/fandawei/data/PBSR_HISR/train"
-    val_dir_ms: str = "/mnt/afs/users/fandawei/data/PBSR_HISR/test_crop50"
-    train_shard_dir: str = "/mnt/afs/users/fandawei/data/PBSR_HISR/train_patch_shards"
-    val_shard_dir: str = "/mnt/afs/users/fandawei/data/PBSR_HISR/test_patch_shards"
+    train_dir_mslabel: str = "datasets_origin/train"
+    val_dir_ms: str = "datasets_origin/test_crop50"
+    train_shard_dir: str = "datasets/patch_shards/train"
+    val_shard_dir: str = "datasets/patch_shards/test"
 
     data_train_num: int = 100000
     data_val_num: int = 100000
