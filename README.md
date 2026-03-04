@@ -119,20 +119,22 @@ Place the original h5 files and patch shards under `v2/datasets_origin` as the f
 ```plaintext
 v2/
 ├── datasets_origin/
-│   ├── train/             # Original h5 files
+│   ├── train/                # Original h5 files
 │   │   └── *.h5
-│   └── test/              # Original h5 files
+│   └── test/                 # Original h5 files
 │       └── *.h5
-├── datasets/              # Generated datasets
-│   ├── train/             # h5 files for training
+├── datasets/                 # Generated datasets
+│   ├── train/                # h5 files for training
 │   │   └── *.h5
-│   ├── test/              # h5 files for validating
+│   ├── test/
 │   │   └── *.h5
-│   └── patch_shards/      # Output of build_patch_shards.py
-│       ├── train/
+│   ├── test_crop50/          # h5 files for pretrained models validating
+│   │   └── *.h5
+│   └── patch_shards/         # Output of build_patch_shards.py
+│       ├── train/            # h5 files for fine-tuning
 │       │   ├── shard_*.h5
-│       │   └── manifest.json
-│       └── test/
+│       │   └── manifest.json 
+│       └── test/             # h5 files for fine-tuned models validating
 │           ├── shard_*.h5
 │           └── manifest.json
 ......
@@ -144,6 +146,7 @@ v2/
 cd ./v2
 python add_bicubic_h5.py --in_dir datasets_origin/train --out_dir datasets/train
 python add_bicubic_h5.py --in_dir datasets_origin/test --out_dir datasets/test
+python HISR_crop50.py --root_in datasets/test --root_out datasets/test_crop50
 cd ..
 ```
 
