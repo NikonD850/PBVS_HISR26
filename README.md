@@ -189,3 +189,6 @@ pip install -r v2-requirements.txt
 # Training & fine-tuning
 torchrun train.py --nproc_per_node=4
 ```
+
+## Acknowledgment
+This code is based on [VolFormer](https://github.com/yudadabing/VolFormer). We sincerely thanks for their contribution.
