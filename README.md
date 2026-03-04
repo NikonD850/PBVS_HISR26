@@ -159,7 +159,9 @@ cd ..
 ## Training
 
 ### Model v1
-Required a 24G NVIDIA GPU
+
+Required 4 24G NVIDIA GPUs. We used NVIDIA RTX 3090
+
 ```bash
 cd ./v1
 
@@ -171,7 +173,8 @@ python finetune_sam_h5_fast.py
 ```
 
 ### Model v2
-Required 4 80G NVIDIA GPUs 
+Required 4 80G NVIDIA GPUs. We used NVIDIA A100/A800
+
 ```bash
 cd ./v2
 
