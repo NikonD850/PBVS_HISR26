@@ -33,7 +33,7 @@ python -m pip install -r requirements.txt
 
 ### Inference
 
-You can download our pre-trained models (v1 & v2) from [checkpoints](https://drive.google.com/drive/folders/10Zys2Wk3QavvLRmKm4gqgJC4FuUgyxW8). The results are available at [final results](https://drive.google.com/drive/folders/1aL0n0hZfNZPARktEyCEtVVoTHkwWLCBt)
+You can download our pre-trained models (v1 & v2) from [checkpoints](https://drive.google.com/drive/folders/10Zys2Wk3QavvLRmKm4gqgJC4FuUgyxW8). The results are available at [final results](https://drive.google.com/drive/folders/1aL0n0hZfNZPARktEyCEtVVoTHkwWLCBt). The results are expected to be the same.
 
 Put `v1.pth` into `./v1/checkpoints`, `v2.pth` into `./v2/checkpoints`, `final_test` dataset into `./datasets`.
 
@@ -180,6 +180,12 @@ python finetune_sam_h5_fast.py
 Required 4 80G NVIDIA GPUs 
 ```bash
 cd ./v2
+
+# Build up Conda Env
+conda create -n PBVS_HISR26_v2 python=3.10
+conda activate PBVS_HISR26_v2
+pip install -r v2-requirements.txt
+
 # Training & fine-tuning
 torchrun train.py --nproc_per_node=4
 ```
