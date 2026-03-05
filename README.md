@@ -167,8 +167,7 @@ cd ..
 
 ### Model v1
 
-Required 4 24G NVIDIA GPUs. We used NVIDIA RTX 3090 GPUs
-
+Required 4 24G NVIDIA GPUs. We used an Ubuntu 20 LTS server with 2 Intel Xeon Gold 6354, 512G RAM and 4 NVIDIA RTX 3090 GPUs.
 ```bash
 cd ./v1
 
@@ -180,7 +179,7 @@ python finetune_sam_h5_fast.py
 ```
 
 ### Model v2
-Required 4 80G NVIDIA GPUs. We used NVIDIA A100s/A800 GPUs
+Required 4 80G NVIDIA GPUs. We used Ubuntu 22.04 LTS servers with 2 Intel Xeon Gold 6348, 480G RAM and 4 NVIDIA A100/A800 GPUs
 
 ```bash
 cd ./v2
