@@ -1,4 +1,4 @@
-# The winner solution of [PBVS'26 HISR Challenge](https://www.codabench.org/competitions/12418/#/results-tab) on both PSNR and SAM metric.
+# The winner solution of [PBVS'26 HISR Challenge](https://www.codabench.org/competitions/12418/#/results-tab) on both PSNR and SAM Evaluation.
 
 Dawei Fan $^{1,2,3}$, Zeyu Li $^1$, Zhenzhen Qin $^{1,2}$, Peihong Xin $^{1,2}$, Xiaofeng Chu $^3$, Fan Ji $^{1,2}$, Chen Yu $^{1,2}$, Yijun Lin $^1$, Hanxiang Yang $^1$, Xiongxin Tang $^{1,2}$, Fanjiang Xu $^{1,2}$
 
