@@ -1,4 +1,4 @@
-# The winner solution of PBVS'26 HISR Challenge.
+# The winner solution of [PBVS'26 HISR Challenge](https://www.codabench.org/competitions/12418/#/results-tab) on both PSNR and SAM metric.
 
 Dawei Fan $^{1,2,3}$, Zeyu Li $^1$, Zhenzhen Qin $^{1,2}$, Peihong Xin $^{1,2}$, Xiaofeng Chu $^3$, Fan Ji $^{1,2}$, Chen Yu $^{1,2}$, Yijun Lin $^1$, Hanxiang Yang $^1$, Xiongxin Tang $^{1,2}$, Fanjiang Xu $^{1,2}$
 
@@ -10,7 +10,7 @@ $^3$ SenseTime Research and Tetras.AI, Beijing/Hangzhou, China
 
 ## Introduction
 
-This is the winner solution's official implementation of [PBVS'26 HISR Challenge](https://www.codabench.org/competitions/12418). Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 (16.64M) and v2 (75.77M), and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results. The v1 model achieved PSNR of 24.5750 dB and SAM of 0.048591 rad, whereas the v2 model delivered 25.0368 dB and 0.052980 rad. The fused result achieves better performance on both metrics, with a PSNR of **25.3089** dB and an SAM of **0.048415** rad.
+Based on [VolFormer](https://github.com/yudadabing/VolFormer), we developed two architectures, named v1 (16.64M) and v2 (75.77M), and trained them separately resulting in two pre-trained models. Considering that a single model may have limited stability, we further improved it by weighted fusing the inference results. The v1 model achieved PSNR of 24.5750 dB and SAM of 0.048591 rad, whereas the v2 model delivered 25.0368 dB and 0.052980 rad. The fused result achieves better performance on both metrics, with a PSNR of **25.3089** dB and an SAM of **0.048415** rad.
 
 ## Installation for Testing or Model v1 Training
 
